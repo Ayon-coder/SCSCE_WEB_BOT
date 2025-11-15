@@ -1,3 +1,7 @@
+# ===============================================================
+# SCCSE Chatbot Backend (FIXED VERSION WITH OFF-TOPIC PROTECTION)
+# ===============================================================
+
 import os
 import logging
 from dotenv import load_dotenv
@@ -10,10 +14,14 @@ from llama_index.core.llms import ChatMessage
 
 from pdf import get_index
 from chat_db import init_db, save_message, get_user_messages, save_summary, get_last_summary
-from prompts import new_prompt, instruction_str
+from prompts import new_prompt, instruction_str  # Import your strict prompts
 
+# Initialize DB
 init_db()
 
+# ---------------------------------------------------------------
+# Basic Setup
+# ---------------------------------------------------------------
 logging.getLogger().setLevel(logging.ERROR)
 load_dotenv()
 
@@ -62,9 +70,17 @@ sccse_index = get_index(sccse_pdf, "sccse")
 sccse_retriever = sccse_index.as_retriever(similarity_top_k=3)
 
 # ---------------------------------------------------------------
-# Memory System
+# Memory System (Per-User)
 # ---------------------------------------------------------------
-memory = ChatMemoryBuffer.from_defaults(token_limit=50)
+# Store separate memory for each user
+user_memories = {}
+
+def get_user_memory(user_id):
+    """Get or create memory buffer for a specific user"""
+    if user_id not in user_memories:
+        user_memories[user_id] = ChatMemoryBuffer.from_defaults(token_limit=50)
+    return user_memories[user_id]
+
 pending_note = None
 pending_delete = False
 
@@ -201,6 +217,9 @@ skill_map = {
 
 def detect_skill_origin(user_id):
     """Determines whether skills came from MEMORY or SUMMARY."""
+    # Get this user's specific memory
+    memory = get_user_memory(user_id)
+    
     memory_text = " ".join([
         m.content.lower() for m in memory.get_all() if m.role == "user"
     ])
@@ -229,6 +248,9 @@ def get_chat_response(message: str, user_name=None, user_id=None):
     global pending_note, pending_delete
 
     msg_lower = message.lower().strip()
+    
+    # Get this user's specific memory
+    memory = get_user_memory(user_id)
 
     # Save user message to DB
     save_message(user_id, "user", message)
